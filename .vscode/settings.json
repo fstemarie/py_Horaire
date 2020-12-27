@@ -1,3 +1,22 @@
 {
-	"python.pythonPath": "d:\\Francois\\Documents\\Development\\Python\\pyhoraire\\.venv\\Scripts\\python.exe"
+    "python.pythonPath": "d:\\Francois\\Documents\\Development\\Python\\pyhoraire\\.venv\\Scripts\\python.exe",
+    "editor.detectIndentation": false,
+    "editor.tabSize": 4,
+    "editor.useTabStops": true,
+    "editor.stickyTabStops": true,
+    "editor.insertSpaces": true,
+    "editor.rulers": [
+        72,
+        78
+    ],
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        ".",
+        "-p",
+        "*_test.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.unittestEnabled": true
 }
