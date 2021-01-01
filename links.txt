@@ -1,0 +1,14 @@
+RFC2045 - Multipurpose Internet Mail Extensions (MIME) Part One
+    https://tools.ietf.org/html/rfc2045.html
+
+RFC2046 - Multipurpose Internet Mail Extensions (MIME) Part Two
+    https://tools.ietf.org/html/rfc2046.html
+
+RFC2047 - MIME (Multipurpose Internet Mail Extensions) Part Three
+    https://tools.ietf.org/html/rfc2047.html
+
+RFC2183 - Communicating Presentation Information in Internet Messages
+    https://tools.ietf.org/html/rfc2183.html
+
+RFC2231 - MIME Parameter Value and Encoded Word Extensions
+    https://tools.ietf.org/html/rfc2231.html
