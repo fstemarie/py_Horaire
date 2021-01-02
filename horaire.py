@@ -25,13 +25,10 @@ PROCESSED_LABEL = 'Processed'
 
 def get_service():
     """ Get the credentials for access to the Google API """
-    creds = None
-    flow = None
-    token = None
-
     # The file token.pickle stores the user's access and refresh tokens,
     # and is created automatically when the authorization flow completes
     # for the first time.
+    creds = None
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
@@ -51,8 +48,7 @@ def get_service():
 
 
 def get_parts(mimetype: str, part: object) -> list:
-    """ Goes through the MIME part sent and returns the MIME
-        parts that are of the type sent as parameter. Used recursively
+    """ Return the MIME parts of the type sent as parameter
 
     Args:
         mimetype (str): the MIME types we're looking for
@@ -74,7 +70,7 @@ def get_parts(mimetype: str, part: object) -> list:
 
 
 def extract_date(gmail_msg: dict) -> date:
-    """ Extract the date the message was sent from the message object
+    """ Extract the date from the Gmail message
 
     Args:
         gmail_msg (dict): A gmail message (which is a list)
@@ -83,8 +79,7 @@ def extract_date(gmail_msg: dict) -> date:
         date: The date that was extracted
     """
     msg_date = filter(
-        lambda h: h['name'] == 'Date',
-        gmail_msg['payload']['headers'])
+        lambda h: h['name'] == 'Date', gmail_msg['payload']['headers'])
     msg_date = list(msg_date)[0]['value']
     msg_date = msg_date.split()[1:4]
     msg_date = ' '.join(msg_date)
@@ -93,8 +88,7 @@ def extract_date(gmail_msg: dict) -> date:
 
 
 def fix_date_token(dirty: str, msg_date: date) -> datetime:
-    """ Take the date for which parts are missing.
-    Fills the missing parts
+    """ Fill the missing parts of the datetime
 
     Args:
         cell (str): The string that contains the incomplete date
@@ -114,7 +108,7 @@ def fix_date_token(dirty: str, msg_date: date) -> datetime:
 
 
 def fix_time_token(time_token: str) -> time:
-    """ Fixes the time sent as parameter. Tries to recover from mistakes
+    """ Fix and convert the time sent as as string
 
     Args:
         time_token (str): the string that contains the time
@@ -135,7 +129,7 @@ def fix_time_token(time_token: str) -> time:
 
 
 def process_workday(cell: str, date_: date) -> dict:
-    """ Get the tokens from the cell and add the time to the date
+    """ Get the tokens from the string and add the time to the date
 
     Args:
         date (datetime): The date part of the workhours
@@ -148,11 +142,8 @@ def process_workday(cell: str, date_: date) -> dict:
     Returns:
         dict: Returns a dictionary with the workhours
     """
-    start = None
-    end = None
-    lunch = None
     tokens = cell.split('|')
-    if len(tokens) < 2:
+    if not len(tokens) in (2, 3):
         raise ValueError('Incorrect number of tokens', tokens)
 
     tokens = [' '.join(t.split()) for t in tokens]
@@ -164,16 +155,16 @@ def process_workday(cell: str, date_: date) -> dict:
     if start > end:
         end = end + timedelta(days=1)
     if len(tokens) == 2:
-        return {'start': start, 'end': end}
+        workhours = {'start': start, 'end': end}
     else:
         lunch = fix_time_token(tokens[2])
         lunch = datetime.combine(date_, lunch)
-        return {'start': start, 'end': end, 'lunch': lunch}
+        workhours = {'start': start, 'end': end, 'lunch': lunch}
+    return workhours
 
 
 def fix_cell(dirty: str) -> str:
-    """ Takes the string from a cell and make sure
-        it's in an understandable format
+    """ Clean up the string
 
     Args:
         dirty (str): The string to clean up
@@ -203,7 +194,7 @@ def fix_cell(dirty: str) -> str:
 
 
 def sanitize(htmldoc: BeautifulSoup):
-    """ Sanitizes the html to make it easier to parse
+    """ Sanitize the html to make it easier to parse
 
     Args:
         htmldoc (BeautifulSoup): The html document to sanitize
@@ -227,8 +218,7 @@ def sanitize(htmldoc: BeautifulSoup):
 
 
 def build_schedules(htmldoc: BeautifulSoup, msg_date: datetime) -> list:
-    """ Takes the html document and parses it return the
-        information in a list
+    """ Take the htmldoc, parse it and return the schedules
 
     Args:
         htmldoc (BeautifulSoup): the html document to be parsed
@@ -239,45 +229,44 @@ def build_schedules(htmldoc: BeautifulSoup, msg_date: datetime) -> list:
         list: Returns the parsed results
     """
     schedules = []
-    schedule = []
+    schedule = {}
     dates = None
-    for table in htmldoc('table'):
-        for row in table('tr'):
-            cells = row('td')
-            cells = [c.get_text().strip() for c in cells]
-            if cells[0] == '@DATES':
-                # The row contains the dates
-                dates = [fix_date_token(d, msg_date) for d in cells[1:]]
-                if schedule:
-                    schedules.append(schedule)
-                schedule = {'@DATES': dates}
-            else:
-                # Get the name of the employee
-                name = cells.pop(0)
-                for date_, cell in zip(dates, cells):
-                    if cell == '*':
-                        continue
-                    try:
-                        if not name in schedule:
-                            schedule[name] = []
-                        schedule[name].append(
-                            process_workday(cell, date_))
-                    except ValueError:
-                        # traceback.print_exc()
-                        pass
-    if schedule and len(schedule) > 0:
-        schedules.append(schedule)
+    for row in htmldoc('tr'):
+        cells = row('td')
+        cells = [c.get_text().strip() for c in cells]
+        if cells[0] == '@DATES':
+            # The row contains the dates
+            dates = [fix_date_token(d, msg_date) for d in cells[1:]]
+            if schedule:
+                schedules.append(schedule)
+            schedule = {'@DATES': dates}
+        else:
+            # Get the name of the employee
+            name = cells.pop(0)
+            for cell, date_ in zip(cells, dates):
+                if cell == '*':
+                    continue
+                if not name in schedule:
+                    schedule[name] = []
+                try:
+                    schedule[name].append(
+                        process_workday(cell, date_))
+                except ValueError:
+                    # traceback.print_exc()
+                    pass
     return schedules
 
 
 def create_event(dt_start: datetime,
                  dt_end: datetime, uid: str, summary) -> Event:
-    """ Creates en event for the calendar
+    """ Return a new event
 
     Args:
         dt_start (datetime): The date at which the event will start
+
         dt_end (datetime):  The date at which the event will end
                             uid (str): The ID of the event
+
         summary ([type]): Description for the event
 
     Returns:
@@ -293,7 +282,7 @@ def create_event(dt_start: datetime,
 
 
 def create_alarm(diff: timedelta, related: str) -> Alarm:
-    """ Creates an alarm for the calendar
+    """ Return a new alarm
 
     Args:
         diff (timedelta): The delta between the alarm and
@@ -311,7 +300,7 @@ def create_alarm(diff: timedelta, related: str) -> Alarm:
 
 
 def turn_to_ical(slug: str, workdays: list) -> bytes:
-    """ Takes the schedule and makes a iCalendar out of it
+    """ Take the schedule and make a iCalendar out of it
 
     Args:
         slug (str): The slug to use in the UID of the events/alarms
@@ -391,9 +380,7 @@ def export_schedules(schedules: list) -> None:
 
 
 def main():
-    """ Gets the schedules sent to my Gmail, parses them
-        and build my calendar
-    """
+    """ Get emailed schedules, parse them and build an icalendar"""
     gmail_msgs = []
     schedules = []
     processed_id = None
