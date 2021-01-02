@@ -322,9 +322,15 @@ def turn_to_ical(slug: str, workdays: list) -> bytes:
     Returns:
         bytes: The calendar in iCal format
     """
+<<<<<<< HEAD
     ical = Calendar()
     ical.add('prodid', '-//pyhoraire//')
     ical.add('version', '2.0')
+=======
+    cal = Calendar()
+    cal.add('prodid', '-//pyhoraire//')
+    cal.add('version', '2.0')
+>>>>>>> 3f57614b2585683bdad3be658bf8122089630643
     for workday in workdays:
         dt_start = workday['start']
         dt_end = workday['end']
@@ -335,7 +341,11 @@ def turn_to_ical(slug: str, workdays: list) -> bytes:
         alarm = create_alarm(timedelta(minutes=-15), 'START')
         ev_workday.add_component(alarm)
         alarm = create_alarm(timedelta(minutes=-5), 'START')
+<<<<<<< HEAD
         ical.add_component(ev_workday)
+=======
+        cal.add_component(ev_workday)
+>>>>>>> 3f57614b2585683bdad3be658bf8122089630643
         if 'lunch' in workday:
             dt_start = workday['lunch']
             dt_end = dt_start + timedelta(minutes=30)
@@ -347,6 +357,7 @@ def turn_to_ical(slug: str, workdays: list) -> bytes:
             ev_lunch.add_component(alarm)
             alarm = create_alarm(timedelta(minutes=-5), 'END')
             ev_lunch.add_component(alarm)
+<<<<<<< HEAD
             ical.add_component(ev_lunch)
     return ical.to_ical(sorted=True)
 
@@ -389,6 +400,10 @@ def export_schedules(schedules: list) -> None:
                                      employee_slug), exist_ok=True)
             with open(filename, 'wb') as fout:
                 fout.write(ical)
+=======
+            cal.add_component(ev_lunch)
+    return cal.to_ical(sorted=True)
+>>>>>>> 3f57614b2585683bdad3be658bf8122089630643
 
 
 def main():
@@ -396,11 +411,22 @@ def main():
         and build my calendar
     """
     gmail_msgs = []
+<<<<<<< HEAD
     schedules = []
     processed_id = None
     unprocessed_id = None
     service = get_service()
 
+=======
+    htmldoc = None
+    msg_date = None
+    processed_id = None
+    results = None
+    schedules = []
+    unprocessed_id = None
+
+    service = get_service()
+>>>>>>> 3f57614b2585683bdad3be658bf8122089630643
     # Call the Gmail API to get the user's labels
     results = service.users().labels().list(userId='me').execute() \
         # pylint: disable=no-member
@@ -427,6 +453,10 @@ def main():
     # with open('messages.pickle', 'wb') as fout:
     #     pickle.dump(gmail_msgs, fout)
     # exit()
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3f57614b2585683bdad3be658bf8122089630643
     # with open('messages.pickle', 'rb') as fin:
     #     gmail_msgs = pickle.load(fin)
 
@@ -443,8 +473,37 @@ def main():
         # Extract the schedules from the html
         schedules.extend(build_schedules(htmldoc, msg_date))
 
+<<<<<<< HEAD
     # output_schedules(schedules)
     export_schedules(schedules)
+=======
+    # print('@'*20, len(schedules))
+    # for sch in schedules:
+    #     print(' '*5, '#'*15, len(sch))
+    #     for emp, wds in sch.items():
+    #         print(' '*10, emp, '-'*10, len(wds))
+    #         for wd in wds:
+    #             print(wd)
+
+    # for sch in schedules[-3:-1]:
+    for sch in schedules:
+        for employee, workdays in sch.items():
+            if employee == '@DATES':
+                continue
+            if not employee.startswith('Ste-Marie'):
+                continue
+            employee_slug = slugify(employee)
+            ical = turn_to_ical(employee_slug, workdays)
+            dt_start = sch['@DATES'][0].strftime('%Y-%m-%d')
+            dt_end = sch['@DATES'][6].strftime('%Y-%m-%d')
+            filename = f'Schedule {dt_start} to {dt_end}.ics'
+            filename = os.path.join('calendars',
+                                    employee_slug, filename)
+            os.makedirs(os.path.join('calendars',
+                                     employee_slug), exist_ok=True)
+            with open(filename, 'wb') as fout:
+                fout.write(ical)
+>>>>>>> 3f57614b2585683bdad3be658bf8122089630643
 
 
 if __name__ == "__main__":
