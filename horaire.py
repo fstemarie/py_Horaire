@@ -1,10 +1,8 @@
 """
 	* pyHoraire *
-	Prends mon horaire a partir du email et va remplir mon calendrier Google 
+	Prends mon horaire a partir du email et
+    va remplir mon calendrier Google
 """
-
-# If modifying these scopes, delete the file token.pickle.
-
 
 import base64
 import os
@@ -14,7 +12,6 @@ import pickle
 from datetime import date, datetime, time, timedelta
 from slugify import slugify
 from bs4 import BeautifulSoup
-from bs4.element import NavigableString, Tag
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -50,7 +47,8 @@ def get_service():
         # Save the credentials for the next run
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
-    return build('gmail', 'v1', credentials=creds)
+    service = build('gmail', 'v1', credentials=creds)
+    return service
 
 
 def get_parts(mimetype: str, part: object) -> list:
@@ -69,15 +67,15 @@ def get_parts(mimetype: str, part: object) -> list:
         # If we are at the root of the message tree
         part = part['payload']
     if part['mimeType'].startswith('multipart'):
-        for p in part['parts']:
-            parts.extend(get_parts(mimetype, p))
+        for sub_part in part['parts']:
+            parts.extend(get_parts(mimetype, sub_part))
     elif part['mimeType'] == mimetype:
         parts.append(part)
     return parts
 
 
 def extract_date(gmail_msg: dict) -> date:
-    """Extract the date the message was sent from the message object
+    """ Extract the date the message was sent from the message object
 
     Args:
         gmail_msg (dict): A gmail message (which is a list)
@@ -95,8 +93,8 @@ def extract_date(gmail_msg: dict) -> date:
     return msg_date
 
 
-def fix_date_token(cell: str, msg_date: date) -> datetime:
-    """Take the date for which parts are missing.
+def fix_date_token(dirty: str, msg_date: date) -> datetime:
+    """ Take the date for which parts are missing.
     Fills the missing parts
 
     Args:
@@ -106,18 +104,18 @@ def fix_date_token(cell: str, msg_date: date) -> datetime:
     Returns:
         datetime: Returns the fixed date
     """
-    dt = cell.split()[1:3]
-    dt.append(str(msg_date.year))
-    dt = ','.join(dt)
-    dt = datetime.strptime(dt, '%b,%d,%Y').date()
-    if dt < msg_date:
+    fixed = dirty.split()[1:3]
+    fixed.append(str(msg_date.year))
+    fixed = ','.join(fixed)
+    fixed = datetime.strptime(fixed, '%b,%d,%Y').date()
+    if fixed < msg_date:
         # If schedule is for january next year
-        dt = dt.replace(year=dt.year + 1)
-    return dt
+        fixed = fixed.replace(year=fixed.year + 1)
+    return fixed
 
 
 def fix_time_token(time_token: str) -> time:
-    """Fixes the time sent as parameter. Tries to recover from mistakes
+    """ Fixes the time sent as parameter. Tries to recover from mistakes
 
     Args:
         time_token (str): the string that contains the time
@@ -125,20 +123,20 @@ def fix_time_token(time_token: str) -> time:
     Returns:
         time: Returns the time fixed
     """
-    tm = None
+    time_ = None
     if len(time_token) in (4, 5):
         if time_token.find(' ') > -1:
-            tm = datetime.strptime(time_token, '%I %p').time()
+            time_ = datetime.strptime(time_token, '%I %p').time()
         else:
-            tm = datetime.strptime(time_token, '%I%p').time()
+            time_ = datetime.strptime(time_token, '%I%p').time()
     elif len(time_token) in (7, 8):
-        tm = datetime.strptime(time_token, '%I:%M %p').time()
-    tm = tm.replace(tzinfo=PST)
-    return tm
+        time_ = datetime.strptime(time_token, '%I:%M %p').time()
+    time_ = time_.replace(tzinfo=PST)
+    return time_
 
 
-def process_workday(dt: date, cell: str) -> dict:
-    """Get the tokens from the cell and add the time to the date
+def process_workday(cell: str, date_: date) -> dict:
+    """ Get the tokens from the cell and add the time to the date
 
     Args:
         date (datetime): The date part of the workhours
@@ -160,9 +158,9 @@ def process_workday(dt: date, cell: str) -> dict:
 
     tokens = [' '.join(t.split()) for t in tokens]
     start = fix_time_token(tokens[0])
-    start = datetime.combine(dt, start)
+    start = datetime.combine(date_, start)
     end = fix_time_token(tokens[1])
-    end = datetime.combine(dt, end)
+    end = datetime.combine(date_, end)
 
     if start > end:
         end = end + timedelta(days=1)
@@ -170,34 +168,43 @@ def process_workday(dt: date, cell: str) -> dict:
         return {'start': start, 'end': end}
     else:
         lunch = fix_time_token(tokens[2])
-        lunch = datetime.combine(dt, lunch)
+        lunch = datetime.combine(date_, lunch)
         return {'start': start, 'end': end, 'lunch': lunch}
 
 
-def fix_cell(cell: str) -> str:
+def fix_cell(dirty: str) -> str:
+    """ Takes the string from a cell and make sure
+        it's in an understandable format
+
+    Args:
+        dirty (str): The string to clean up
+
+    Returns:
+        str: The string cleaned up
+    """
     tokens = None
-    c = cell.strip()
-    if c == '*':
+    fixed = dirty.strip()
+    if fixed == '*':
         pass
-    elif c[:3].lower() in ('off', 'sic', 'vac'):
-        c = '*'
-    elif not c[0].isnumeric():
-        print('Unknown :', c)
-        c = '*'
+    elif fixed[:3].lower() in ('off', 'sic', 'vac'):
+        fixed = '*'
+    elif not fixed[0].isnumeric():
+        print('Unknown :', fixed)
+        fixed = '*'
     else:
-        c = c.replace('\r\n', ' ').replace('  ', ' ')
-        c = c.replace(' LUNCH : ', '|')
-        c = c.replace(' - ', '|').replace(' PST', '')
-        c = c.replace(' NO LUNCH', '').replace('LUNCH ', '')
-        tokens = c.split('|')
+        fixed = fixed.replace('\r\n', ' ').replace('  ', ' ')
+        fixed = fixed.replace(' LUNCH : ', '|')
+        fixed = fixed.replace(' - ', '|').replace(' PST', '')
+        fixed = fixed.replace(' NO LUNCH', '').replace('LUNCH ', '')
+        tokens = fixed.split('|')
         if len(tokens) > 1:
             tokens = [' '.join(t.split()[0:2]) for t in tokens]
-            c = '|'.join(tokens)
-    return c
+            fixed = '|'.join(tokens)
+    return fixed
 
 
 def sanitize(htmldoc: BeautifulSoup):
-    """Sanitizes the html to make it easier to parse
+    """ Sanitizes the html to make it easier to parse
 
     Args:
         htmldoc (BeautifulSoup): The html document to sanitize
@@ -207,21 +214,21 @@ def sanitize(htmldoc: BeautifulSoup):
             tag.attrs.clear()
         for row in table('tr'):
             cells = row('td')
-            for c in cells:
-                c.string = c.get_text().strip()
-                if not c.string:
-                    c.string = '*'
+            for cell in cells:
+                cell.string = cell.get_text().strip()
+                if not cell.string:
+                    cell.string = '*'
             if cells[0].string + cells[1].string == '**':
                 row.decompose()
             elif cells[0].string == '*':
                 cells[0].string = '@DATES'
             else:
-                for c in cells[1:]:
-                    c.string = fix_cell(c.string)
+                for cell in cells[1:]:
+                    cell.string = fix_cell(cell.string)
 
 
 def build_schedules(htmldoc: BeautifulSoup, msg_date: datetime) -> list:
-    """Takes the html document and parses it return the
+    """ Takes the html document and parses it return the
         information in a list
 
     Args:
@@ -248,14 +255,14 @@ def build_schedules(htmldoc: BeautifulSoup, msg_date: datetime) -> list:
             else:
                 # Get the name of the employee
                 name = cells.pop(0)
-                for date, cell in zip(dates, cells):
+                for date_, cell in zip(dates, cells):
                     if cell == '*':
                         continue
                     try:
                         if not name in schedule:
                             schedule[name] = []
                         schedule[name].append(
-                            process_workday(date, cell))
+                            process_workday(cell, date_))
                     except ValueError:
                         # traceback.print_exc()
                         pass
@@ -264,53 +271,170 @@ def build_schedules(htmldoc: BeautifulSoup, msg_date: datetime) -> list:
     return schedules
 
 
+def create_event(dt_start: datetime,
+                 dt_end: datetime, uid: str, summary) -> Event:
+    """ Creates en event for the calendar
+
+    Args:
+        dt_start (datetime): The date at which the event will start
+        dt_end (datetime):  The date at which the event will end
+                            uid (str): The ID of the event
+        summary ([type]): Description for the event
+
+    Returns:
+        Event: [description]
+    """
+    event_ = Event()
+    event_.add('UID', uid)
+    event_.add('DTSTART', dt_start)
+    event_.add('DTEND', dt_end)
+    event_.add('SUMMARY', summary)
+    event_.add('DTSTAMP', datetime.now())
+    return event_
+
+
+def create_alarm(diff: timedelta, related: str) -> Alarm:
+    """ Creates an alarm for the calendar
+
+    Args:
+        diff (timedelta): The delta between the alarm and
+                        the start/end of the event
+        related (str):  Is the delta related to the START
+                        or the END of the event
+
+    Returns:
+        Alarm: The Alarm itself
+    """
+    alarm = Alarm()
+    alarm.add('ACTION', 'DISPLAY')
+    alarm.add('TRIGGER', diff, parameters={'RELATED': related})
+    return alarm
+
+
+def turn_to_ical(slug: str, workdays: list) -> bytes:
+    """ Takes the schedule and makes a iCalendar out of it
+
+    Args:
+        slug (str): The slug to use in the UID of the events/alarms
+                    Probably the name of the employee
+        workdays (list): The workdays to transform into events
+
+    Returns:
+        bytes: The calendar in iCal format
+    """
+    ical = Calendar()
+    ical.add('prodid', '-//pyhoraire//')
+    ical.add('version', '2.0')
+    for workday in workdays:
+        dt_start = workday['start']
+        dt_end = workday['end']
+        uid = dt_start.timestamp()
+        uid = f'w/{uid}/{slug}/geeksquad.ca'
+        summary = 'Travail'
+        ev_workday = create_event(dt_start, dt_end, uid, summary)
+        alarm = create_alarm(timedelta(minutes=-15), 'START')
+        ev_workday.add_component(alarm)
+        alarm = create_alarm(timedelta(minutes=-5), 'START')
+        ical.add_component(ev_workday)
+        if 'lunch' in workday:
+            dt_start = workday['lunch']
+            dt_end = dt_start + timedelta(minutes=30)
+            uid = dt_start.timestamp()
+            uid = f'l/{uid}/{slug}/geeksquad.ca'
+            summary = 'Lunch'
+            ev_lunch = create_event(dt_start, dt_end, uid, summary)
+            alarm = create_alarm(timedelta(minutes=-5), 'START')
+            ev_lunch.add_component(alarm)
+            alarm = create_alarm(timedelta(minutes=-5), 'END')
+            ev_lunch.add_component(alarm)
+            ical.add_component(ev_lunch)
+    return ical.to_ical(sorted=True)
+
+
+def output_schedules(schedules: list) -> None:
+    """ Output the schedules to the screen
+
+    Args:
+        schedules (list): The schedules to be output
+    """
+    print('@'*20, len(schedules))
+    for schedule in schedules:
+        print(' '*5, '#'*15, len(schedule))
+        for employee, workdays in schedule.items():
+            print(' '*10, employee, '-'*10, len(workdays))
+            for workday in workdays:
+                print(workday)
+
+
+def export_schedules(schedules: list) -> None:
+    """ Create the .ics files from the schedules
+
+    Args:
+        schedules (list): The schedules to be exported
+    """
+    for sch in schedules:
+        for employee, workdays in sch.items():
+            if employee == '@DATES':
+                continue
+            if not employee.startswith('Ste-Marie'):
+                continue
+            employee_slug = slugify(employee)
+            ical = turn_to_ical(employee_slug, workdays)
+            dt_start = sch['@DATES'][0].strftime('%Y-%m-%d')
+            dt_end = sch['@DATES'][6].strftime('%Y-%m-%d')
+            filename = f'Schedule {dt_start} to {dt_end}.ics'
+            filename = os.path.join('calendars',
+                                    employee_slug, filename)
+            os.makedirs(os.path.join('calendars',
+                                     employee_slug), exist_ok=True)
+            with open(filename, 'wb') as fout:
+                fout.write(ical)
+
+
 def main():
-    """Gets the schedules sent to my Gmail, parses them
+    """ Gets the schedules sent to my Gmail, parses them
         and build my calendar
     """
-    gmail_msg = None
     gmail_msgs = []
-    htmldoc = None
-    msg_date = None
-    # processed_id = None
-    # results = None
     schedules = []
-    # unprocessed_id = None
+    processed_id = None
+    unprocessed_id = None
+    service = get_service()
 
-    # service = get_service()
-    # # Call the Gmail API to get the user's labels
-    # results = service.users().labels().list(userId='me').execute()
-    # # Identify the labels used for the schedules
-    # for label in results['labels']:
-    #     if label['name'] == UNPROCESSED_LABEL:
-    #         unprocessed_id = label['id']
-    #     if label['name'] == PROCESSED_LABEL:
-    #         processed_id = label['id']
+    # Call the Gmail API to get the user's labels
+    results = service.users().labels().list(userId='me').execute() \
+        # pylint: disable=no-member
+    # Identify the labels used for the schedules
+    for label in results['labels']:
+        if label['name'] == UNPROCESSED_LABEL:
+            unprocessed_id = label['id']
+        if label['name'] == PROCESSED_LABEL:
+            processed_id = label['id']
 
-    # # Get the IDs of messages that have the label applied
-    # results = service.users().messages().list(
-    #     userId='me', labelIds=[unprocessed_id]).execute()
+    # Get the IDs of messages that have the label applied
+    results = service.users().messages().list(  # pylint: disable=no-member
+        userId='me', labelIds=[unprocessed_id]).execute()
 
-    # # Get the body of those messages
-    # for msg in results['messages']:
-    #     msg = service.users().messages().get(
-    #         userId='me', id=msg['id'], format='full').execute()
-    #     gmail_msgs.append(msg)
-    # # gmail_msgs = [m for m in gmail_msgs if
-    # #     not processed_id in m['labelIds']]
+    # Get the body of those messages
+    for msg in results['messages']:
+        msg = service.users().messages().get(  # pylint: disable=no-member
+            userId='me', id=msg['id'], format='full').execute()
+
+        gmail_msgs.append(msg)
+        gmail_msgs = [m for m in gmail_msgs if
+                      not processed_id in m['labelIds']]
 
     # with open('messages.pickle', 'wb') as fout:
     #     pickle.dump(gmail_msgs, fout)
     # exit()
-
-    with open('messages.pickle', 'rb') as fin:
-        gmail_msgs = pickle.load(fin)
+    # with open('messages.pickle', 'rb') as fin:
+    #     gmail_msgs = pickle.load(fin)
 
     # For each message, get the html inside
     for gmail_msg in gmail_msgs:
         msg_date = extract_date(gmail_msg)
-        markup = get_parts('text/html', gmail_msg)
-        markup = markup[0]['body']['data']
+        markup = get_parts('text/html', gmail_msg)[0]['body']['data']
+        # markup = markup[0]['body']['data']
         markup = base64.urlsafe_b64decode(markup).decode('UTF8')
         htmldoc = BeautifulSoup(markup, features='html.parser')
 
@@ -319,72 +443,8 @@ def main():
         # Extract the schedules from the html
         schedules.extend(build_schedules(htmldoc, msg_date))
 
-    # print('@'*20, len(schedules))
-    # for sch in schedules:
-    #     print(' '*5, '#'*15, len(sch))
-    #     for emp, wds in sch.items():
-    #         print(' '*10, emp, '-'*10, len(wds))
-    #         for wd in wds:
-    #             print(wd)
-
-    # for sch in schedules[-3:-1]:
-    for sch in schedules:
-        for employee, workdays in sch.items():
-            cal = Calendar()
-            cal.add('prodid', '-//pyhoraire//')
-            cal.add('version', '2.0')
-            if employee == '@DATES':
-                continue
-            # if not employee.startswith('Ste-Marie'):
-            #     continue
-            employee_slug = slugify(employee)
-            for workday in workdays:
-                uid = workday['start'].timestamp()
-                uid = f'w/{uid}/{employee_slug}/geeksquad.ca'
-                ev_workday = Event()
-                ev_workday.add('UID', uid)
-                ev_workday.add('DTSTART', workday['start'])
-                ev_workday.add('DTEND', workday['end'])
-                alarm = Alarm()
-                alarm.add('ACTION', 'DISPLAY')
-                alarm.add('TRIGGER', timedelta(minutes=-15),
-                          parameters={'RELATED': 'START'})
-                ev_workday.add_component(alarm)
-                alarm = Alarm()
-                alarm.add('ACTION', 'DISPLAY')
-                alarm.add('TRIGGER', timedelta(minutes=-5),
-                          parameters={'RELATED': 'START'})
-                ev_workday.add_component(alarm)
-                cal.add_component(ev_workday)
-                if 'lunch' in workday:
-                    uid = workday['lunch'].timestamp()
-                    uid = f'l/{uid}/{employee_slug}/geeksquad.ca'
-                    ev_lunch = Event()
-                    ev_lunch.add('UID', uid)
-                    ev_lunch.add('DTSTART', workday['lunch'])
-                    ev_lunch.add('DTEND', workday['lunch'] +
-                                 timedelta(minutes=30))
-                    alarm = Alarm()
-                    alarm.add('ACTION', 'DISPLAY')
-                    alarm.add('TRIGGER', timedelta(minutes=-5),
-                              parameters={'RELATED': 'START'})
-                    ev_lunch.add_component(alarm)
-                    alarm = Alarm()
-                    alarm.add('ACTION', 'DISPLAY')
-                    alarm.add('TRIGGER', timedelta(minutes=-5),
-                              parameters={'RELATED': 'END'})
-                    ev_lunch.add_component(alarm)
-                    cal.add_component(ev_lunch)
-
-            dtstart = sch['@DATES'][0].strftime('%Y-%m-%d')
-            dtend = sch['@DATES'][6].strftime('%Y-%m-%d')
-            filename = f'Schedule {dtstart} to {dtend}.ics'
-            filename = os.path.join('calendars',
-                                    employee_slug, filename)
-            os.makedirs(os.path.join('calendars',
-                                        employee_slug), exist_ok=True)
-            with open(filename, 'wb') as fout:
-                fout.write(cal.to_ical())
+    # output_schedules(schedules)
+    export_schedules(schedules)
 
 
 if __name__ == "__main__":
