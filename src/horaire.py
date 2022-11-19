@@ -21,7 +21,6 @@ SCOPES = ['https://mail.google.com/']
 PST = timezone('Canada/Pacific')
 UNPROCESSED_LABEL = 'Horaire'
 PROCESSED_LABEL = 'Processed'
-pytz.
 
 def get_service():
     """ Get the credentials for access to the Google API """

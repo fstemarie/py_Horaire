@@ -6,6 +6,12 @@ name = "pypi"
 [packages]
 google-auth = "*"
 google-auth-oauthlib = "*"
+pytz = "*"
+icalendar = "*"
+slugify = "*"
+bs4 = "*"
+google-api-python-client = "*"
+google-auth-httplib2 = "*"
 
 [dev-packages]
 
